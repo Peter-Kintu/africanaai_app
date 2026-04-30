@@ -98,12 +98,6 @@ class NotificationListenerServiceImpl : NotificationListenerService() {
                 "sender" to sender,
                 "timestamp" to System.currentTimeMillis()
             )
-        ) { result ->
-            if (result != null) {
-                Log.d(TAG, "Notification processed: $result")
-            } else {
-                Log.w(TAG, "Failed to process notification")
-            }
-        }
+        )
     }
 }

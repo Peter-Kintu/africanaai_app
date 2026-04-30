@@ -62,10 +62,6 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # Assets for the local LLM model (Secretary)
-  assets:
-    - assets/models/gemma-2b-it-gpu.bin  # Local LLM model for on-device inference
-
   # For details regarding adding assets from package dependencies, see
   # https://flutter.dev/to/asset-from-package
 
