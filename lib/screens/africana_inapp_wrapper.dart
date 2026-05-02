@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../services/ai_service.dart';
@@ -21,7 +22,14 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
   InAppWebViewController? webViewController;
   double progress = 0;
   bool _secretaryReady = false;
-  String _secretaryStatus = "Initializing Secretary...";
+  bool _isOffline = false;
+  String _errorMessage = "";
+  Timer? _errorTimer;
+  Timer? _secretaryErrorTimer;
+  bool _secretaryErrorShown = false;
+
+  // URLs for different sections
+  final String _url = "https://www.africanaai.info/";
 
   // Optimized settings for a smooth AI platform experience
   InAppWebViewSettings settings = InAppWebViewSettings(
@@ -32,6 +40,8 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
     allowsBackForwardNavigationGestures: true, // Native swipe-to-back for iOS
     verticalScrollBarEnabled: false,
     supportZoom: false, // Keeps the UI consistent with mobile app feel
+    supportMultipleWindows: true,
+    useShouldOverrideUrlLoading: true,
   );
 
   @override
@@ -50,7 +60,6 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
         if (mounted) {
           setState(() {
             _secretaryReady = _aiService.isReady;
-            _secretaryStatus = "Secretary ready for duty!";
           });
         }
         // 2. Initialize LocalSecretary once model is ready
@@ -63,7 +72,6 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
       if (mounted) {
         setState(() {
           _secretaryReady = false;
-          _secretaryStatus = "Secretary initialization: $e";
         });
       }
     }
@@ -75,8 +83,6 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
       if (_aiService.isDownloading) {
         setState(() {
           progress = _aiService.downloadProgress;
-          final percent = (progress * 100).toStringAsFixed(0);
-          _secretaryStatus = "Downloading Secretary ($percent%)";
         });
       }
       await Future.delayed(const Duration(milliseconds: 500));
@@ -113,6 +119,74 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
         _showNotificationAccessDialog();
       }
     });
+  }
+
+  void _startErrorTimer() {
+    _errorTimer?.cancel();
+    _errorTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted) {
+        setState(() {
+          _isOffline = false;
+          _errorMessage = "";
+        });
+      }
+    });
+  }
+
+  Widget _buildSecretaryError() {
+    if (_aiService.errorMessage != null && !_secretaryErrorShown) {
+      _secretaryErrorShown = true;
+      _secretaryErrorTimer?.cancel();
+      _secretaryErrorTimer = Timer(const Duration(seconds: 5), () {
+        if (mounted) {
+          setState(() {
+            _secretaryErrorShown = false;
+          });
+        }
+      });
+    }
+    if (_aiService.errorMessage != null && _secretaryErrorShown) {
+      return Positioned(
+        bottom: 80,
+        left: 16,
+        right: 16,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.red.shade50,
+            border: Border.all(color: Colors.red.shade200),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.error, color: Colors.red.shade700, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Secretary Model: ${_aiService.errorMessage}',
+                  style: TextStyle(color: Colors.red.shade700, fontSize: 12),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  _aiService.retryDownload().then((_) {
+                    setState(() {});
+                  });
+                  setState(() {
+                    _secretaryErrorShown = false;
+                  });
+                  _secretaryErrorTimer?.cancel();
+                },
+                child: const Text('Retry', style: TextStyle(color: Colors.blue)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 
   /// Show dialog requesting notification access
@@ -173,6 +247,8 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
 
   @override
   void dispose() {
+    _errorTimer?.cancel();
+    _secretaryErrorTimer?.cancel();
     _notificationService.dispose();
     _secretary.dispose();
     super.dispose();
@@ -181,56 +257,6 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Africana AI"),
-        elevation: 0,
-        actions: [
-          // Secretary status indicator with tap-to-retry
-          GestureDetector(
-            onTap: _aiService.errorMessage != null
-                ? () => _aiService.retryDownload().then((_) {
-                      setState(() {});
-                    })
-                : null,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-              child: Center(
-                child: Tooltip(
-                  message: _secretaryStatus,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _secretaryReady ? Icons.check_circle : 
-                        _aiService.isDownloading ? Icons.download :
-                        _aiService.errorMessage != null ? Icons.error :
-                        Icons.schedule,
-                        color: _secretaryReady ? Colors.green :
-                        _aiService.errorMessage != null ? Colors.red :
-                        Colors.orange,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _secretaryReady ? "Secretary Ready" :
-                        _aiService.isDownloading ? "Downloading..." :
-                        _aiService.errorMessage != null ? "Retry" :
-                        "Loading...",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _secretaryReady ? Colors.green :
-                          _aiService.errorMessage != null ? Colors.red :
-                          Colors.orange,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
       body: SafeArea(
         child: Stack(
           children: [
@@ -254,67 +280,136 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
                 else
                   const SizedBox.shrink(),
                 Expanded(
-                  child: InAppWebView(
-                    key: webViewKey,
-                    initialUrlRequest: URLRequest(
-                      url: WebUri("https://www.africanaai.info/"),
-                    ),
-                    initialSettings: settings,
-                    onWebViewCreated: (controller) {
-                      webViewController = controller;
-                    },
-                    onProgressChanged: (controller, progress) {
-                      setState(() {
-                        this.progress = progress / 100;
-                      });
-                    },
-                    // Handles file uploads (e.g., for JobCopilot CV uploads)
-                    onPermissionRequest: (controller, request) async {
-                      return PermissionResponse(
-                        resources: request.resources,
-                        action: PermissionResponseAction.GRANT,
-                      );
-                    },
-                    onLoadStop: (controller, url) async {
-                      // Hide web-only UI elements that shouldn't appear in the app
-                      await controller.injectCSSCode(
-                        source:
-                            ".web-only-header { display: none !important; } .download-app-banner { display: none !important; }",
-                      );
-                    },
-                  ),
+                  child: _isOffline
+                      ? _buildOfflineScreen()
+                      : InAppWebView(
+                          key: webViewKey,
+                          initialUrlRequest: URLRequest(
+                            url: WebUri(_url),
+                          ),
+                          initialSettings: settings,
+                          onWebViewCreated: (controller) {
+                            webViewController = controller;
+                          },
+                          onProgressChanged: (controller, progress) {
+                            setState(() {
+                              this.progress = progress / 100;
+                            });
+                          },
+                          // ignore: deprecated_member_use
+                          onLoadError: (controller, url, code, message) {
+                            setState(() {
+                              _isOffline = true;
+                              _errorMessage = "Unable to connect. Please check your internet or try again later.";
+                            });
+                            _startErrorTimer();
+                          },
+                          // ignore: deprecated_member_use
+                          onLoadHttpError: (controller, url, statusCode, description) {
+                            setState(() {
+                              _isOffline = true;
+                              _errorMessage = "Service unavailable. Please try again later.";
+                            });
+                            _startErrorTimer();
+                          },
+                          onReceivedError: (controller, request, error) {
+                            setState(() {
+                              _isOffline = true;
+                              _errorMessage = "Unable to connect. Please check your internet or try again later.";
+                            });
+                            _startErrorTimer();
+                          },
+                          onReceivedHttpError: (controller, request, errorResponse) {
+                            setState(() {
+                              _isOffline = true;
+                              _errorMessage = "Service unavailable. Please try again later.";
+                            });
+                            _startErrorTimer();
+                          },
+                          // Handles file uploads (e.g., for JobCopilot CV uploads)
+                          onPermissionRequest: (controller, request) async {
+                            return PermissionResponse(
+                              resources: request.resources,
+                              action: PermissionResponseAction.GRANT,
+                            );
+                          },
+                          onLoadStop: (controller, url) async {
+                            // Hide web-only UI elements that shouldn't appear in the app
+                            await controller.injectCSSCode(
+                              source: """
+                                header { display: none !important; }
+                                footer { display: none !important; }
+                                nav { display: none !important; }
+                                .header-glass { display: none !important; }
+                                #mobile-bottom-nav { display: none !important; }
+                                .web-only-header { display: none !important; }
+                                .download-app-banner { display: none !important; }
+                                body { padding-bottom: 0 !important; }
+                              """,
+                            );
+                          },
+                          shouldOverrideUrlLoading: (controller, navigationAction) async {
+                            final uri = navigationAction.request.url;
+                            if (uri == null) {
+                              return NavigationActionPolicy.CANCEL;
+                            }
+                            return NavigationActionPolicy.ALLOW;
+                          },
+                          onCreateWindow: (controller, createWindowAction) async {
+                            final requestUrl = createWindowAction.request.url;
+                            if (requestUrl != null) {
+                              controller.loadUrl(urlRequest: URLRequest(url: requestUrl));
+                            }
+                            return false;
+                          },
+                        ),
                 ),
               ],
             ),
             // Show error message if download failed
-            if (_aiService.errorMessage != null)
-              Positioned(
-                bottom: 16,
-                left: 16,
-                right: 16,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    border: Border.all(color: Colors.red.shade200),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.error, color: Colors.red.shade700, size: 20),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Secretary Model: ${_aiService.errorMessage}',
-                          style: TextStyle(color: Colors.red.shade700, fontSize: 12),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            _buildSecretaryError(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOfflineScreen() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.wifi_off,
+              size: 80,
+              color: Colors.grey,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No Internet Connection',
+              style: Theme.of(context).textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage,
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _isOffline = false;
+                  _errorMessage = "";
+                });
+                _errorTimer?.cancel();
+                webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(_url)));
+              },
+              child: const Text('Retry'),
+            ),
           ],
         ),
       ),
