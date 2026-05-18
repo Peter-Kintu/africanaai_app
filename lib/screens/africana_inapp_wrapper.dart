@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../services/ai_service.dart';
 import '../services/local_secretary.dart';
@@ -105,11 +107,14 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
         // Generate AI response locally
         final aiResponse = await _secretary.generateResponse(context);
         
-        // In production, you would send the reply back to the messenger app
-        _showSecretaryNotification(
-          sender: notification.sender ?? "Secretary",
-          message: aiResponse,
-        );
+        if (notification.isWhatsApp && aiResponse.isNotEmpty) {
+          await _sendToWhatsApp(aiResponse);
+        } else {
+          _showSecretaryNotification(
+            sender: notification.sender ?? "Secretary",
+            message: aiResponse,
+          );
+        }
       },
     );
     
@@ -119,6 +124,41 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
         _showNotificationAccessDialog();
       }
     });
+  }
+
+  Future<void> _sendToWhatsApp(String aiResponse) async {
+    final encodedText = Uri.encodeComponent(aiResponse);
+    final Uri whatsappUri = Uri.parse('whatsapp://send?text=$encodedText');
+    final Uri webFallbackUri = Uri.parse('https://api.whatsapp.com/send?text=$encodedText');
+
+    try {
+      if (await canLaunchUrl(whatsappUri)) {
+        await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+      } else if (await canLaunchUrl(webFallbackUri)) {
+        await launchUrl(webFallbackUri, mode: LaunchMode.externalApplication);
+      } else {
+        throw 'WhatsApp is not available on this device.';
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Draft opened in WhatsApp. Select a contact and send.'),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      await Clipboard.setData(ClipboardData(text: aiResponse));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open WhatsApp automatically. Draft copied to clipboard.'),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 
   void _startErrorTimer() {
@@ -334,16 +374,12 @@ class _AfricanaInAppWrapperState extends State<AfricanaInAppWrapper> {
                             );
                           },
                           onLoadStop: (controller, url) async {
-                            // Hide web-only UI elements that shouldn't appear in the app
+                            // Hide only specific app-install banners while preserving the site header/nav.
                             await controller.injectCSSCode(
                               source: """
-                                header { display: none !important; }
-                                footer { display: none !important; }
-                                nav { display: none !important; }
-                                .header-glass { display: none !important; }
-                                #mobile-bottom-nav { display: none !important; }
-                                .web-only-header { display: none !important; }
                                 .download-app-banner { display: none !important; }
+                                .web-only-header { display: none !important; }
+                                #mobile-bottom-nav { display: none !important; }
                                 body { padding-bottom: 0 !important; }
                               """,
                             );

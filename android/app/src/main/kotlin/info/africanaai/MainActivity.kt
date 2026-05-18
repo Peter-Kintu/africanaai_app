@@ -1,4 +1,4 @@
-package com.example.africanaai
+package info.africanaai
 
 import android.content.Intent
 import android.provider.Settings
@@ -13,7 +13,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity: FlutterActivity() {
     
     companion object {
-        private const val NOTIFICATION_CHANNEL = "com.africanaai/notifications"
+        private const val NOTIFICATION_CHANNEL = "info.africanaai/notifications"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -86,7 +86,7 @@ class MainActivity: FlutterActivity() {
             contentResolver,
             "enabled_notification_listeners"
         ) ?: ""
-        val packageName = "$packageName/com.example.africanaai.NotificationListenerServiceImpl"
+        val packageName = "${'$'}packageName/info.africanaai.NotificationListenerServiceImpl"
         return enabledNotificationListeners.contains(packageName)
     }
 

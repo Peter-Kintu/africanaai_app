@@ -39,6 +39,7 @@ dependencies:
   mediapipe_genai: ^0.0.1
   path_provider: ^2.1.5
   dio: ^5.4.0  # For background model downloading
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
@@ -50,6 +51,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.10.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -61,6 +63,19 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon/app_icon.jpg"
+  min_sdk_android: 21
+
+  # Optional adaptive icon support for Android (recommended if you use
+  # a square artwork asset and want sharp results on newer devices).
+  #adaptive_icon_background: "#0b2b5c"
+  #adaptive_icon_foreground: "assets/icon/app_icon.jpg"
+
+  # For details, see https://pub.dev/packages/flutter_launcher_icons
 
   # For details regarding adding assets from package dependencies, see
   # https://flutter.dev/to/asset-from-package

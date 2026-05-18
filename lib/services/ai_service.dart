@@ -1,198 +1,101 @@
-import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:path_provider/path_provider.dart';
 
-/// AIService handles silent background download of the Secretary model
-/// Keeps initial app download small (~20-50MB) while downloading model in background
-/// Model is downloaded once and cached indefinitely
+/// AIService handles communication with the deployed cloud Gemma LLM
 class AIService {
   static final AIService _instance = AIService._internal();
   
-  bool isReady = false;
-  bool isDownloading = false;
-  double downloadProgress = 0.0;
-  String? errorMessage;
+  final Dio _dio = Dio();
   
-  // Model configuration
-  static const String modelFileName = 'secretary_model.bin';
-  // Replace with your actual model URL (Firebase Storage, AWS S3, your server, etc.)
-  static const String modelUrl = 
-      'https://huggingface.co/google/gemma-2b-it/resolve/main/model.bin';
+  // Deployed Gemma API endpoint
+  static const String baseUrl = 'https://sing-sjf2.onrender.com/v1/chat';
   
-  // Optional: Model hash for integrity verification
-  static const String? modelHash = null; // Add if you want to verify downloads
+  // SECRETS: Pass via build-args or secure storage in production.
+  static const String _apiBearerToken = '';
 
   factory AIService() {
     return _instance;
   }
 
-  AIService._internal();
-
-  /// Check if model file exists locally
-  Future<bool> modelExists() async {
-    try {
-      final directory = await getApplicationDocumentsDirectory();
-      final modelFile = File('${directory.path}/$modelFileName');
-      return await modelFile.exists();
-    } catch (e) {
-      print('Error checking model existence: $e');
-      return false;
+  AIService._internal() {
+    // Configure default timeouts for LLM Generation
+    _dio.options.baseUrl = baseUrl;
+    _dio.options.connectTimeout = const Duration(seconds: 15);
+    _dio.options.receiveTimeout = const Duration(seconds: 30);
+    
+    // Add Auth Headers if token exists
+    if (_apiBearerToken.isNotEmpty && _apiBearerToken != 'YOUR_HUGGING_FACE_OR_BACKEND_TOKEN') {
+      _dio.options.headers['Authorization'] = 'Bearer $_apiBearerToken';
     }
+    _dio.options.headers['Content-Type'] = 'application/json';
   }
 
-  /// Get the path to the local model file
-  Future<String?> getModelPath() async {
+  // Legacy fields preserved to prevent compilation breaks in your WebView UI
+  bool get isReady => true; 
+  bool get isDownloading => false;
+  double get downloadProgress => 1.0;
+  String? get errorMessage => null;
+
+  /// Sends the conversation context to your deployed Gemma model
+  Future<String> fetchGemmaResponse(String prompt, {int maxTokens = 256, double temperature = 0.7}) async {
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final modelFile = File('${directory.path}/$modelFileName');
-      
-      if (await modelFile.exists()) {
-        return modelFile.path;
-      }
-      return null;
-    } catch (e) {
-      print('Error getting model path: $e');
-      return null;
-    }
-  }
+      final Map<String, dynamic> payload = {
+        'prompt': prompt,
+      };
 
-  /// Prepare the Secretary model: check if exists, download if needed
-  /// This runs silently in background on app startup
-  Future<void> prepareSecretaryModel() async {
-    if (isReady) return; // Already ready
-    
-    // Check if model already exists
-    if (await modelExists()) {
-      isReady = true;
-      downloadProgress = 1.0;
-      print('Secretary model already available locally');
-      return;
-    }
+      final response = await _dio.post('', data: payload);
 
-    // Model doesn't exist, start background download
-    isDownloading = true;
-    errorMessage = null;
-    
-    try {
-      await _downloadModel();
-      isReady = true;
-      isDownloading = false;
-      downloadProgress = 1.0;
-      print('Secretary model downloaded and ready');
-    } catch (e) {
-      isDownloading = false;
-      errorMessage = 'Model download failed: $e';
-      isReady = false;
-      print(errorMessage);
-      // Don't throw - allow app to continue with offline mode
-    }
-  }
+      if (response.statusCode == 200) {
+        final data = response.data;
 
-  /// Download the model file with progress tracking
-  Future<void> _downloadModel() async {
-    final directory = await getApplicationDocumentsDirectory();
-    final savePath = '${directory.path}/$modelFileName';
-    final dio = Dio();
-
-    // Configure timeouts for reliable downloads
-    dio.options.connectTimeout = const Duration(seconds: 30);
-    dio.options.receiveTimeout = const Duration(seconds: 30);
-
-    // Check if partial download exists (for resumption)
-    final partialFile = File('$savePath.partial');
-    int startBytes = 0;
-    
-    if (await partialFile.exists()) {
-      startBytes = await partialFile.length();
-      print('Resuming download from byte: $startBytes');
-    }
-
-    try {
-      // Download with progress tracking and resumable support
-      await dio.download(
-        modelUrl,
-        savePath,
-        onReceiveProgress: (received, total) {
-          if (total != -1) {
-            downloadProgress = (received + startBytes) / (total + startBytes);
-            print('Download progress: ${(downloadProgress * 100).toStringAsFixed(1)}%');
+        if (data is String) {
+          return data;
+        } else if (data is Map<String, dynamic>) {
+          if (data.containsKey('translated_text')) {
+            return data['translated_text'].toString();
           }
-        },
-        deleteOnError: false, // Keep partial file for resumption
-      );
+          if (data.containsKey('result')) {
+            return data['result'].toString();
+          }
+          if (data.containsKey('output')) {
+            return data['output'].toString();
+          }
+          if (data.containsKey('generated_text')) {
+            return data['generated_text'].toString();
+          }
+          if (data.containsKey('text')) {
+            return data['text'].toString();
+          }
+          if (data.containsKey('translation')) {
+            return data['translation'].toString();
+          }
+        } else if (data is List && data.isNotEmpty) {
+          final first = data.first;
+          if (first is Map<String, dynamic>) {
+            return first['generated_text']?.toString() ?? first['text']?.toString() ?? first.toString();
+          }
+          return first.toString();
+        }
 
-      // Verify file was created
-      final modelFile = File(savePath);
-      if (!await modelFile.exists()) {
-        throw Exception('Model file not created after download');
+        return data.toString();
+      } else {
+        throw Exception('Server returned code: ${response.statusCode}');
       }
-
-      print('Model download completed: $savePath');
     } on DioException catch (e) {
-      print('Dio download error: ${e.message}');
-      throw Exception('Download failed: ${e.message}');
+      print('Network Error targeting Gemma Cloud: ${e.message}');
+      if (e.response != null) {
+        print('Server error data: ${e.response?.data}');
+      }
+      return "The AI agent is currently busy. Please try again soon.";
     } catch (e) {
-      print('Unexpected download error: $e');
-      rethrow;
+      print('Unexpected API error: $e');
+      return "Failed to establish secure handshake with cloud server.";
     }
   }
 
-  /// Retry download if it failed (user can trigger manually)
-  Future<void> retryDownload() async {
-    if (isDownloading) return; // Already downloading
-    
-    // Clear error state
-    errorMessage = null;
-    downloadProgress = 0.0;
-    
-    // Check again if model somehow exists
-    if (await modelExists()) {
-      isReady = true;
-      return;
-    }
-
-    await prepareSecretaryModel();
-  }
-
-  /// Get user-friendly status message
-  String getStatusMessage() {
-    if (isReady && downloadProgress >= 1.0) {
-      return 'Secretary Ready';
-    } else if (isDownloading) {
-      final percent = (downloadProgress * 100).toStringAsFixed(0);
-      return 'Downloading Secretary Model ($percent%)';
-    } else if (errorMessage != null) {
-      return 'Secretary Offline - Tap to retry';
-    } else {
-      return 'Initializing Secretary...';
-    }
-  }
-
-  /// Cleanup resources
-  void dispose() {
-    isReady = false;
-    isDownloading = false;
-    downloadProgress = 0.0;
-    errorMessage = null;
-  }
-
-  /// Get estimated download time (for UX feedback)
-  String getEstimatedTimeRemaining() {
-    if (downloadProgress <= 0 || downloadProgress >= 1.0) {
-      return '';
-    }
-    
-    // This is a simple heuristic - in production you'd track actual speed
-    final percentRemaining = (1.0 - downloadProgress) * 100;
-    
-    if (percentRemaining > 90) {
-      return '~5 minutes';
-    } else if (percentRemaining > 50) {
-      return '~2 minutes';
-    } else if (percentRemaining > 25) {
-      return '~1 minute';
-    } else {
-      return '~30 seconds';
-    }
-  }
+  // Placeholder definitions to keep UI references compatible without crashing
+  Future<void> prepareSecretaryModel() async {}
+  Future<void> retryDownload() async {}
+  String getStatusMessage() => 'Secretary Cloud Active';
+  String getEstimatedTimeRemaining() => '';
+  void dispose() {}
 }

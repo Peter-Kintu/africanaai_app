@@ -1,4 +1,4 @@
-package com.example.africanaai
+package info.africanaai
 
 import android.app.Notification
 import android.content.Intent
@@ -16,7 +16,7 @@ class NotificationListenerServiceImpl : NotificationListenerService() {
     
     companion object {
         private const val TAG = "NotificationListener"
-        private const val CHANNEL_ID = "com.africanaai/notifications"
+        private const val CHANNEL_ID = "info.africanaai/notifications"
         private var methodChannel: MethodChannel? = null
 
         fun setMethodChannel(channel: MethodChannel) {
@@ -38,7 +38,7 @@ class NotificationListenerServiceImpl : NotificationListenerService() {
         val subText = extras.getString(Notification.EXTRA_SUB_TEXT) ?: ""
         val packageName = sbn.packageName
         
-        Log.d(TAG, "Notification from $packageName: $title - $text")
+        Log.d(TAG, "Notification from ${'$'}packageName: ${'$'}title - ${'$'}text")
         
         // Check if notification is from messaging apps
         val isMessenger = isFromMessengerApp(packageName)
@@ -55,7 +55,7 @@ class NotificationListenerServiceImpl : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         super.onNotificationRemoved(sbn)
-        Log.d(TAG, "Notification removed: ${sbn?.packageName}")
+        Log.d(TAG, "Notification removed: ${'$'}{sbn?.packageName}")
     }
 
     /**
